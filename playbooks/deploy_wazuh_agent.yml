@@ -3,16 +3,26 @@
   hosts: all
   become: yes
   vars:
-    wazuh_manager_ip: "10.0.60.x" # SERVER_IP
-    wazuh_version: "4.9.0"
+    wazuh_manager_ip: "10.0.60.x"
+    wazuh_version: "4.x"
 
   tasks:
-    - name: Import Wazuh GPG key
-      ansible.builtin.rpm_key:
+    # --- Debian/Ubuntu Section ---
+    - name: Add Wazuh GPG key (Debian/Ubuntu)
+      ansible.builtin.apt_key:
+        url: https://packages.wazuh.com/key/GPG-KEY-WAZUH
         state: present
-        key: https://packages.wazuh.com/key/GPG-KEY-WAZUH
+      when: ansible_os_family == "Debian"
 
-    - name: Add Wazuh repository
+    - name: Add Wazuh repository (Debian/Ubuntu)
+      ansible.builtin.apt_repository:
+        repo: "deb https://packages.wazuh.com/{{ wazuh_version }}/apt/ stable main"
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    # --- RedHat/CentOS/AlmaLinux Section ---
+    - name: Add Wazuh repository (RHEL/CentOS)
       ansible.builtin.copy:
         dest: /etc/yum.repos.d/wazuh.repo
         content: |
@@ -21,22 +31,31 @@
           gpgkey=https://packages.wazuh.com/key/GPG-KEY-WAZUH
           enabled=1
           name=EL-$releasever - Wazuh
-          baseurl=https://packages.wazuh.com/4.x/yum/
+          baseurl=https://packages.wazuh.com/{{ wazuh_version }}/yum/
           protect=1
+      when: ansible_os_family == "RedHat"
 
+    # --- Installation (Unified) ---
     - name: Install Wazuh Agent
       ansible.builtin.package:
         name: wazuh-agent
         state: present
 
-    - name: Configure Wazuh Agent
+    - name: Configure Wazuh Agent Manager IP
       ansible.builtin.lineinfile:
         path: /var/ossec/etc/ossec.conf
         regexp: '<address>.*</address>'
         line: "    <address>{{ wazuh_manager_ip }}</address>"
+      notify: Restart Wazuh Agent
 
-    - name: Start Wazuh Agent service
+    - name: Start and enable Wazuh Agent
       ansible.builtin.service:
         name: wazuh-agent
         state: started
         enabled: yes
+
+  handlers:
+    - name: Restart Wazuh Agent
+      ansible.builtin.service:
+        name: wazuh-agent
+        state: restarted
