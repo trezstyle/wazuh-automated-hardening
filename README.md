@@ -1,0 +1,1 @@
+# wazuh-automated-hardening
